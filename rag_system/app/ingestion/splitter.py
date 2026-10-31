@@ -67,8 +67,12 @@ def build_splitter(
     Returns:
         A configured RecursiveCharacterTextSplitter instance.
     """
-    size = chunk_size or int(os.getenv("CHUNK_SIZE", "512"))
-    overlap = chunk_overlap or int(os.getenv("CHUNK_OVERLAP", "64"))
+    size = chunk_size if chunk_size is not None else int(os.getenv("CHUNK_SIZE", "512"))
+    overlap = (
+        chunk_overlap
+        if chunk_overlap is not None
+        else int(os.getenv("CHUNK_OVERLAP", "64"))
+    )
 
     if overlap >= size:
         raise ValueError(
