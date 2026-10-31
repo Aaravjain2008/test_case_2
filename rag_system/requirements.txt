@@ -18,6 +18,7 @@ ollama>=0.3.0,<0.5.0
 # Document loading helpers
 unstructured>=0.14.0,<0.18.0
 markdown>=3.6
+pypdf>=4.0.0
 
 # Configuration
 python-dotenv>=1.0.0,<2.0.0
