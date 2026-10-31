@@ -103,7 +103,8 @@ class OllamaClient(BaseLLMClient):
 
         logger.info("Sending request to Ollama (model='%s') …", self.model)
         try:
-            response = ollama.chat(
+            client = ollama.Client(host=self.base_url)
+            response = client.chat(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
                 options={"temperature": 0.0},  # deterministic for grounded answers
