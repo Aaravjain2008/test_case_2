@@ -105,9 +105,13 @@ class Retriever:
                        ``RELEVANCE_THRESHOLD`` env var or 1.2.
         """
         self.store = store
-        self.top_k: int = top_k or int(os.getenv("TOP_K", str(_DEFAULT_TOP_K)))
-        self.threshold: float = threshold or float(
-            os.getenv("RELEVANCE_THRESHOLD", str(_DEFAULT_THRESHOLD))
+        self.top_k: int = (
+            top_k if top_k is not None else int(os.getenv("TOP_K", str(_DEFAULT_TOP_K)))
+        )
+        self.threshold: float = (
+            threshold
+            if threshold is not None
+            else float(os.getenv("RELEVANCE_THRESHOLD", str(_DEFAULT_THRESHOLD)))
         )
         logger.debug(
             "Retriever: top_k=%d, threshold=%.2f.", self.top_k, self.threshold
