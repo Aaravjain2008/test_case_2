@@ -54,7 +54,7 @@ To meet the strict **no-hallucination** requirement, the system implements a mul
 
 ## Chunking & Embedding Justifications
 
-- **Recursive Markdown Splitting**: Uses `["\n## ", "\n### ", "\n\n", "\n"]` as split boundaries to keep sections intact.
+- **Recursive Markdown Splitting**: Uses markdown-aware separators (`\n## `, `\n### `, `\n#### `, paragraph break, line break, word) so headings are the preferred split points and sections stay intact.
 - **Chunk Size (512)**: Ideal size to keep complete technical steps/bullet points together in one context window while avoiding noisy metadata overlap.
 - **Local Embedding (`all-MiniLM-L6-v2`)**: Extremely fast, runs entirely on your CPU/GPU, doesn't leak data to external APIs, and creates high-quality 384-dimension vector spaces.
 
@@ -63,7 +63,7 @@ To meet the strict **no-hallucination** requirement, the system implements a mul
 ## Setup Instructions
 
 ### 1. Install System Requirements
-Make sure Python 3.8+ is installed.
+Make sure Python 3.9+ is installed.
 Install [Ollama](https://ollama.ai/) and run it on your machine.
 Pull the model you wish to use:
 ```bash
@@ -84,6 +84,29 @@ Copy the example configuration file:
 cp .env.example .env
 ```
 Open `.env` and adjust the variables if needed. By default, it is configured for the local Ollama instance and local embeddings.
+
+### Configuration Reference
+
+All settings are read from environment variables (or from `.env`):
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATA_DIR` | `./data` | Folder of documents to ingest |
+| `CHROMA_PERSIST_DIR` | `./chroma_db` | Where the vector database is stored |
+| `CHROMA_COLLECTION` | `rag_knowledge_base` | ChromaDB collection name |
+| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | sentence-transformers model |
+| `CHUNK_SIZE` | `512` | Maximum characters per chunk |
+| `CHUNK_OVERLAP` | `64` | Overlap between adjacent chunks |
+| `TOP_K` | `5` | Chunks retrieved per query |
+| `RELEVANCE_THRESHOLD` | `1.2` | Maximum L2 distance to accept a chunk |
+| `LLM_PROVIDER` | `ollama` | `ollama` or `mock` |
+| `OLLAMA_MODEL` | `llama3.2` | Ollama model tag |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
+
+### Running Without Ollama
+
+Set `LLM_PROVIDER=mock` to run the full pipeline with a canned LLM. This is
+useful for trying the ingestion and retrieval flow; embeddings still run locally.
 
 ---
 
@@ -118,7 +141,7 @@ python main.py query "How do I upgrade my subscription plan?"
 
 ## Testing
 
-Run all unit and integration tests:
+Run all unit and integration tests from inside the `rag_system/` directory:
 ```bash
-pytest tests/ -v
+python -m pytest tests/ -v
 ```
