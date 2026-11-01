@@ -37,6 +37,10 @@ _MARKDOWN_SEPARATORS: List[str] = [
     "",        # character boundary (absolute last resort)
 ]
 
+# Increase chunk overlap to capture more context between adjacent chunks
+_DEFAULT_CHUNK_SIZE = 100
+_DEFAULT_CHUNK_OVERLAP = 200
+
 
 def _chunk_id(source: str, chunk_index: int, content: str) -> str:
     """Generate a stable, unique ID for a chunk.
@@ -57,8 +61,8 @@ def build_splitter(
     """Build and return a configured RecursiveCharacterTextSplitter.
 
     Values are read from environment variables if not passed directly:
-      CHUNK_SIZE    (default: 512)
-      CHUNK_OVERLAP (default: 64)
+      CHUNK_SIZE    (default: 100)
+      CHUNK_OVERLAP (default: 200)
 
     Args:
         chunk_size:    Maximum characters per chunk.  Overrides env var.
@@ -67,13 +71,8 @@ def build_splitter(
     Returns:
         A configured RecursiveCharacterTextSplitter instance.
     """
-    size = chunk_size or int(os.getenv("CHUNK_SIZE", "512"))
-    overlap = chunk_overlap or int(os.getenv("CHUNK_OVERLAP", "64"))
-
-    if overlap >= size:
-        raise ValueError(
-            f"CHUNK_OVERLAP ({overlap}) must be less than CHUNK_SIZE ({size})."
-        )
+    size = chunk_size or int(os.getenv("CHUNK_SIZE", str(_DEFAULT_CHUNK_SIZE)))
+    overlap = chunk_overlap or int(os.getenv("CHUNK_OVERLAP", str(_DEFAULT_CHUNK_OVERLAP)))
 
     logger.debug("Splitter: chunk_size=%d, chunk_overlap=%d.", size, overlap)
     return RecursiveCharacterTextSplitter(
