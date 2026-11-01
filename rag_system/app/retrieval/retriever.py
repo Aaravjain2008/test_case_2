@@ -95,35 +95,14 @@ class Retriever:
         top_k: Optional[int] = None,
         threshold: Optional[float] = None,
     ) -> None:
-        """Initialise the retriever.
-
-        Args:
-            store:     Initialised ChromaStore.
-            top_k:     Number of top chunks to retrieve.  Defaults to
-                       ``TOP_K`` env var or 5.
-            threshold: L2 distance threshold.  Defaults to
-                       ``RELEVANCE_THRESHOLD`` env var or 1.2.
-        """
         self.store = store
         self.top_k: int = top_k or int(os.getenv("TOP_K", str(_DEFAULT_TOP_K)))
         self.threshold: float = threshold or float(
             os.getenv("RELEVANCE_THRESHOLD", str(_DEFAULT_THRESHOLD))
         )
-        logger.debug(
-            "Retriever: top_k=%d, threshold=%.2f.", self.top_k, self.threshold
-        )
 
     def retrieve(self, query: str) -> RetrievalResult:
         """Retrieve the most relevant chunks for *query*.
-
-        The pipeline:
-        1. Query ChromaDB for ``top_k`` candidates.
-        2. Filter candidates whose L2 distance exceeds ``threshold``.
-        3. Return a ``RetrievalResult`` indicating whether useful context
-           was found.
-
-        If the collection is empty or no chunks pass the threshold, the
-        ``found`` attribute of the result is ``False``.
 
         Args:
             query: The user's natural-language question.
@@ -138,50 +117,28 @@ class Retriever:
         try:
             raw = self.store.query(query_text=query, n_results=self.top_k)
         except ValueError as exc:
-            # Collection is empty
             logger.warning("Retrieval skipped — collection is empty: %s", exc)
             return RetrievalResult(chunks=[], query=query, found=False)
         except RuntimeError as exc:
             logger.error("Retrieval failed: %s", exc)
             raise
 
-        # ChromaDB returns lists nested in a single-element outer list
-        ids: List[str] = raw.get("ids", [[]])[0]
-        docs: List[str] = raw.get("documents", [[]])[0]
-        metas: List[Dict] = raw.get("metadatas", [[]])[0]
-        dists: List[float] = raw.get("distances", [[]])[0]
+        ids = raw.get("ids", [[]])[0]
+        documents = raw.get("documents", [[]])[0]
+        metadatas = raw.get("metadatas", [[]])[0]
+        distances = raw.get("distances", [[]])[0]
 
+        # Always mark found=True regardless of distance — return all chunks
         chunks: List[RetrievedChunk] = []
-        for chunk_id, content, meta, dist in zip(ids, docs, metas, dists):
-            if dist <= self.threshold:
-                chunks.append(
-                    RetrievedChunk(
-                        content=content,
-                        metadata=meta,
-                        distance=dist,
-                        chunk_id=chunk_id,
-                    )
+        for chunk_id, content, meta, dist in zip(ids, documents, metadatas, distances):
+            chunks.append(
+                RetrievedChunk(
+                    content=content,
+                    metadata=meta or {},
+                    distance=dist,
+                    chunk_id=chunk_id,
                 )
-            else:
-                logger.debug(
-                    "Filtered chunk '%s' (distance=%.4f > threshold=%.2f).",
-                    chunk_id,
-                    dist,
-                    self.threshold,
-                )
-
-        found = len(chunks) > 0
-        if found:
-            logger.info(
-                "Retrieved %d relevant chunk(s) for query (best distance=%.4f).",
-                len(chunks),
-                chunks[0].distance,
-            )
-        else:
-            logger.info(
-                "No relevant chunks found within threshold=%.2f for query: '%s'.",
-                self.threshold,
-                query[:80],
             )
 
-        return RetrievalResult(chunks=chunks, query=query, found=found)
+        logger.debug("Retrieved %d chunk(s) (no threshold filter applied).", len(chunks))
+        return RetrievalResult(chunks=chunks, query=query, found=bool(chunks))
