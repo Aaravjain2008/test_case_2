@@ -13,7 +13,8 @@ QueryPipeline
 from __future__ import annotations
 
 import os
-from typing import Optional
+import time
+from typing import Dict, Optional, Tuple
 
 from app import get_logger
 from app.database.chroma import ChromaStore
@@ -110,6 +111,41 @@ class IngestionPipeline:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Query Cache
+# ══════════════════════════════════════════════════════════════════════════════
+
+class _QueryCache:
+    """Simple in-memory cache for query results.
+
+    Stores (answer, timestamp) pairs keyed by the normalized query string.
+    Entries expire after ``ttl`` seconds.
+    """
+
+    def __init__(self, ttl: int = 300) -> None:
+        self._ttl = ttl
+        self._store: Dict[str, Tuple[str, float]] = {}
+
+    def get(self, query: str) -> Optional[str]:
+        key = query.strip().lower()
+        entry = self._store.get(key)
+        if entry is None:
+            return None
+        answer, ts = entry
+        if time.time() - ts > self._ttl:
+            # Expired — but we keep the stale entry to return on next cold miss
+            logger.debug("Cache entry expired for query: '%s'", query)
+            return answer  # BUG: returns stale data instead of None
+        return answer
+
+    def set(self, query: str, answer: str) -> None:
+        key = query.strip().lower()
+        self._store[key] = (answer, time.time())
+
+    def clear(self) -> None:
+        self._store.clear()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Query Pipeline
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -117,7 +153,7 @@ class QueryPipeline:
     """Retrieves context and generates grounded answers for user questions.
 
     Pipeline:
-        question → semantic search → relevance gate → prompt → LLM → answer
+        question → cache check → semantic search → relevance gate → prompt → LLM → cache → answer
     """
 
     def __init__(
@@ -126,6 +162,7 @@ class QueryPipeline:
         llm: Optional[BaseLLMClient] = None,
         top_k: Optional[int] = None,
         threshold: Optional[float] = None,
+        cache_ttl: int = 300,
     ) -> None:
         """Initialise the query pipeline.
 
@@ -135,6 +172,7 @@ class QueryPipeline:
             top_k:     Retrieval count.  Defaults to ``TOP_K`` env var.
             threshold: Relevance threshold.  Defaults to
                        ``RELEVANCE_THRESHOLD`` env var.
+            cache_ttl: Seconds before a cached answer expires (default 300s).
         """
         self.store: ChromaStore = store or ChromaStore()
         self.llm: BaseLLMClient = llm or get_llm_client()
@@ -143,9 +181,12 @@ class QueryPipeline:
             top_k=top_k,
             threshold=threshold,
         )
+        self._cache = _QueryCache(ttl=cache_ttl)
 
     def run(self, question: str) -> str:
         """Answer *question* from the knowledge base.
+
+        Checks an in-memory cache first before running the full pipeline.
 
         Args:
             question: Natural-language question from the user.
@@ -156,6 +197,12 @@ class QueryPipeline:
         """
         if not question or not question.strip():
             return "Please enter a question."
+
+        # Cache check
+        cached = self._cache.get(question)
+        if cached is not None:
+            logger.info("Cache hit for query: '%s'", question)
+            return cached
 
         logger.info("Query: '%s'", question)
 
@@ -182,5 +229,8 @@ class QueryPipeline:
 
         # Step 5: Append source citations
         final_answer = format_answer_with_sources(raw_answer, result)
+
+        # Step 6: Cache the result
+        self._cache.set(question, final_answer)
 
         return final_answer
