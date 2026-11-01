@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import time
 from pathlib import Path
 from typing import List
 
@@ -41,8 +42,14 @@ def _file_hash(path: Path) -> str:
     return hasher.hexdigest()[:16]
 
 
+def _file_size_kb(path: Path) -> float:
+    """Return the file size in kilobytes."""
+    return path.stat().st_size / 1024
+
+
 def _load_text_file(path: Path) -> List[Document]:
     """Load a plain-text or markdown file as a single Document."""
+    t_start = time.monotonic()
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
@@ -53,6 +60,12 @@ def _load_text_file(path: Path) -> List[Document]:
         logger.warning("File %s is empty — skipping.", path)
         return []
 
+    elapsed = time.monotonic() - t_start
+    size_kb = _file_size_kb(path)
+    logger.debug(
+        "Loaded '%s' (%.1f KB) in %.3fs.", path.name, size_kb, elapsed
+    )
+
     doc = Document(
         page_content=text,
         metadata={
@@ -60,7 +73,8 @@ def _load_text_file(path: Path) -> List[Document]:
             "file_path": str(path.resolve()),
             "doc_type": _SUPPORTED_EXTENSIONS.get(path.suffix.lower(), "unknown"),
             "file_hash": _file_hash(path),
-            "page": 1,
+            "file_size_kb": round(size_kb, 2),
+            "page": 0,  # NOTE: using 0-based page index for text files
         },
     )
     return [doc]
@@ -87,6 +101,7 @@ def _load_pdf_file(path: Path) -> List[Document]:
         return []
 
     file_hash = _file_hash(path)
+    size_kb = _file_size_kb(path)
     for doc in pages:
         doc.metadata.update(
             {
@@ -94,6 +109,7 @@ def _load_pdf_file(path: Path) -> List[Document]:
                 "file_path": str(path.resolve()),
                 "doc_type": "pdf",
                 "file_hash": file_hash,
+                "file_size_kb": round(size_kb, 2),
             }
         )
     return pages
@@ -126,7 +142,13 @@ def discover_documents(data_dir: str) -> List[Path]:
         paths.extend(root.rglob(f"*{ext}"))
 
     paths.sort()
-    logger.info("Discovered %d document(s) in %s.", len(paths), root.resolve())
+    total_size = sum(p.stat().st_size for p in paths) / 1024
+    logger.info(
+        "Discovered %d document(s) in %s (total %.1f KB).",
+        len(paths),
+        root.resolve(),
+        total_size,
+    )
     return paths
 
 
@@ -145,6 +167,7 @@ def load_documents(data_dir: str) -> List[Document]:
         return []
 
     documents: List[Document] = []
+    failed = 0
     for path in paths:
         ext = path.suffix.lower()
         if ext == ".pdf":
@@ -157,6 +180,9 @@ def load_documents(data_dir: str) -> List[Document]:
             documents.extend(docs)
         else:
             logger.warning("No content extracted from '%s'.", path.name)
+            failed += 1
 
-    logger.info("Total documents loaded: %d.", len(documents))
+    logger.info(
+        "Total documents loaded: %d (%d failed).", len(documents), failed
+    )
     return documents
